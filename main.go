@@ -1,79 +1,72 @@
 package main
 
 import (
-	"fmt"
 	"log"
+
 	"time"
 
-	"github.com/paypal/gatt"
+	"github.com/tarm/serial"
+
+	"github.com/hybridgroup/gobot"
+	"github.com/hybridgroup/gobot/platforms/gpio"
+	"github.com/hybridgroup/gobot/platforms/intel-iot/edison"
 )
 
 func main() {
+	c := &serial.Config{Name: "/dev/ttyMFD1", Baud: 57600}
+	s, err := serial.OpenPort(c)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	srv := gatt.NewServer(gatt.Name("gophergatt"))
-	svc := srv.AddService(gatt.MustParseUUID("09fc95c0-c111-11e3-9904-0002a5d5c51b"))
+	_, err = s.Write([]byte("4"))
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	// Add a read characteristic that prints how many times it has been read
-	n := 0
-	rchar := svc.AddCharacteristic(gatt.MustParseUUID("11fac9e0-c111-11e3-9246-0002a5d5c51b"))
-	rchar.HandleRead(
-		gatt.ReadHandlerFunc(
-			func(resp gatt.ReadResponseWriter, req *gatt.ReadRequest) {
-				fmt.Fprintf(resp, "count: %d", n)
-				n++
-			}),
+	log.Println("Started 9 degress of freedom connection.")
+
+	go func() {
+		for {
+			buf := make([]byte, 128)
+			n, err := s.Read(buf)
+			if err != nil {
+				log.Fatal(err)
+			}
+			f := parseFreedomData(buf)
+			//fmt.Printf("%s", string(buf[:n]))
+		}
+	}()
+
+	gbot := gobot.NewGobot()
+
+	e := edison.NewEdisonAdaptor("edison")
+	blueLed := gpio.NewLedDriver(e, "led", "3")
+	redLed := gpio.NewLedDriver(e, "led", "5")
+	greenLed := gpio.NewLedDriver(e, "led", "6")
+	yellowLed := gpio.NewLedDriver(e, "led", "9")
+	var level byte = 0
+
+	work := func() {
+		gobot.Every(100*time.Millisecond, func() {
+			blueLed.Brightness(level)
+			redLed.Brightness(level)
+			greenLed.Brightness(level)
+			yellowLed.Brightness(level)
+			level++
+			if level >= 168 {
+				level = 0
+			}
+			//led.Toggle()
+		})
+	}
+
+	robot := gobot.NewRobot("quad",
+		[]gobot.Connection{e},
+		[]gobot.Device{blueLed, redLed, greenLed, yellowLed},
+		work,
 	)
 
-	// Add a write characteristic that logs when written to
-	wchar := svc.AddCharacteristic(gatt.MustParseUUID("16fe0d80-c111-11e3-b8c8-0002a5d5c51b"))
-	wchar.HandleWriteFunc(
-		func(r gatt.Request, data []byte) (status byte) {
-			log.Println("Wrote:", string(data))
-			return gatt.StatusSuccess
-		})
-
-	// Add a notify characteristic that updates once a second
-	nchar := svc.AddCharacteristic(gatt.MustParseUUID("1c927b50-c116-11e3-8a33-0800200c9a66"))
-	nchar.HandleNotifyFunc(
-		func(r gatt.Request, n gatt.Notifier) {
-			go func() {
-				count := 0
-				for !n.Done() {
-					fmt.Fprintf(n, "Count: %d", count)
-					count++
-					time.Sleep(time.Second)
-				}
-			}()
-		})
-
-	fmt.Println("advertising...")
-	// Start the server
-	log.Fatal(srv.AdvertiseAndServe())
+	gbot.AddRobot(robot)
+	gbot.Start()
 }
-
-// c := &serial.Config{Name: "/dev/ttyMFD1", Baud: 9600}
-// s, err := serial.OpenPort(c)
-// if err != nil {
-// 	log.Fatal(err)
-// }
-
-// go func() {
-// 	for {
-// 		reader := bufio.NewReader(os.Stdin)
-// 		fmt.Print("Enter text: ")
-// 		text, _ := reader.ReadString('\n')
-// 		_, err := s.Write([]byte(text))
-// 		if err != nil {
-// 			log.Fatal(err)
-// 		}
-// 	}
-// }()
-
-// for {
-// 	buf := make([]byte, 128)
-// 	n, err := s.Read(buf)
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
-// 	log.Println("stuff:", string(buf[:n]))
-// }
