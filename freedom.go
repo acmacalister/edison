@@ -13,6 +13,7 @@ type Freedom struct {
 }
 
 func parseFreedomData(data []byte) *Freedom {
-	// parse the data out.
-	return &Freedom{} // stick it here.
+	return &Freedom{X: int(data[0]), Y: int(data[1]), Z: int(data[2]),
+		a1: int(data[3]), a2: int(data[4]), a3: int(data[5]),
+		m1: int(data[6]), m2: int(data[7]), m3: int(data[8])}
 }
